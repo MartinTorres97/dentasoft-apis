@@ -5,18 +5,28 @@ import sgMail from '@sendgrid/mail';
 const app = express();
 app.use(express.json());
 
+// ======================
 // Página de prueba
+// ======================
 app.get("/", (req, res) => {
   res.send("Dentasoft APIs funcionando");
 });
 
 // 🔐 Variables de entorno
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const TELEGRAM_TOKEN   = process.env.TELEGRAM_TOKEN;
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
-const SENDGRID_FROM = process.env.SENDGRID_FROM; // mail remitente
+const SENDGRID_FROM    = process.env.SENDGRID_FROM; // mail remitente
 
+// Inicializar SendGrid
 if (SENDGRID_API_KEY) {
-  sgMail.setApiKey(SENDGRID_API_KEY);
+  try {
+    sgMail.setApiKey(SENDGRID_API_KEY);
+    console.log("SendGrid API key configurada.");
+  } catch (e) {
+    console.error("Error configurando SendGrid API key:", e);
+  }
+} else {
+  console.warn("SENDGRID_API_KEY no está definida en las variables de entorno.");
 }
 
 // =====================
@@ -24,23 +34,22 @@ if (SENDGRID_API_KEY) {
 // =====================
 const allowedOrigins = [
   'https://dentasoft-8f0a8.web.app',
-  'http://127.0.0.1:5501'
+  'https://dentasoft-8f0a8.firebaseapp.com',
+  'http://127.0.0.1:5501',
+  'http://localhost:5501'
 ];
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
 
   if (allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  } else {
-    // Por seguridad, si viene de otro origen no lo autorizamos
-    res.setHeader('Access-Control-Allow-Origin', 'https://dentasoft-8f0a8.web.app');
+    res.setHeader("Access-Control-Allow-Origin", origin);
   }
 
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
-  if (req.method === 'OPTIONS') {
+  if (req.method === "OPTIONS") {
     return res.sendStatus(200);
   }
   next();
@@ -104,16 +113,26 @@ Si no puede asistir, por favor comuníquese con el consultorio.
 // ==========================================
 app.post('/api/avisos/email', async (req, res) => {
   try {
-    const { email, nombre, apellido, fecha, hora, odontologoNombre } = req.body;
+    console.log('REQ BODY /api/avisos/email =>', req.body);
+
+    const { email, nombre, apellido, fecha, hora, odontologoNombre } = req.body || {};
 
     if (!email) {
-      return res.status(400).json({ error: 'Falta email del paciente' });
+      return res.status(400).json({
+        ok: false,
+        error: 'Falta email del paciente en el body',
+        bodyRecibido: req.body
+      });
     }
 
     if (!SENDGRID_API_KEY || !SENDGRID_FROM) {
-      return res.status(500).json({ error: 'SENDGRID_API_KEY o SENDGRID_FROM no configurados en el servidor' });
+      return res.status(500).json({
+        ok: false,
+        error: 'SENDGRID_API_KEY o SENDGRID_FROM no configurados en el servidor'
+      });
     }
 
+    const fromEmail      = (SENDGRID_FROM || '').trim();
     const nombreCompleto = [nombre, apellido].filter(Boolean).join(' ');
 
     const subject = 'Recordatorio de turno odontológico - Dentasoft';
@@ -134,17 +153,35 @@ Equipo Dentasoft
 
     const msg = {
       to: email,
-      from: SENDGRID_FROM,
+      from: fromEmail,
       subject,
       text
     };
 
+    console.log('Enviando mail con SendGrid:', msg);
+
     await sgMail.send(msg);
+
     return res.json({ ok: true, message: 'Email enviado correctamente' });
 
   } catch (err) {
     console.error('Error SendGrid:', err);
-    return res.status(500).json({ ok: false, error: err.message });
+
+    let detalle = err.message || 'Error desconocido';
+
+    if (err.response && err.response.body && Array.isArray(err.response.body.errors)) {
+      const e0 = err.response.body.errors[0];
+      if (e0 && e0.message) {
+        detalle = e0.message;
+      }
+    }
+
+    console.error('SendGrid mensaje:', detalle);
+
+    return res.status(400).json({
+      ok: false,
+      error: detalle
+    });
   }
 });
 
