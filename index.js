@@ -4,6 +4,10 @@ import sgMail from '@sendgrid/mail';
 
 const app = express();
 app.use(express.json());
+app.get("/", (req, res) => {
+  res.send("Dentasoft APIs funcionando");
+});
+
 
 // 🔐 Variables de entorno (las vas a configurar en Render)
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
